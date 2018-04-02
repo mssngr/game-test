@@ -1,6 +1,7 @@
 import React from 'react';
 import Expo from 'expo'
 import {
+  Easing,
   Dimensions,
   StyleSheet,
   View,
@@ -13,98 +14,102 @@ import map from './images/map.png'
 
 export default class App extends React.Component {
   state = {
-    pos: {
-      x: new Animated.Value(-4000),
-      y: new Animated.Value(-4000),
+    charPos: new Animated.ValueXY({x: -4000, y: -4000}),
+    joystickPos: {
+      x: 0,
+      y: 0,
     },
   }
 
   panResponder = PanResponder.create({
-    // Ask to be the responder:
-    onStartShouldSetPanResponder: (evt, gestureState) => true,
-    onStartShouldSetPanResponderCapture: (evt, gestureState) => true,
-    onMoveShouldSetPanResponder: (evt, gestureState) => true,
-    onMoveShouldSetPanResponderCapture: (evt, gestureState) => true,
-
-    onPanResponderGrant: (evt, gestureState) => {
-      // The gesture has started. Show visual feedback so the user knows
-      // what is happening!
-
-      // gestureState.d{x,y} will be set to zero now
+    onStartShouldSetPanResponder: () => true,
+    onStartShouldSetPanResponderCapture: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponderCapture: () => true,
+    onPanResponderGrant: () => {
+      this.animateStart()
     },
-    onPanResponderMove: (evt, gestureState) => {
-      // The most recent move distance is gestureState.move{X,Y}
-
-      // The accumulated gesture distance since becoming responder is
-      // gestureState.d{x,y}
-      const right = gestureState.dx >= 0
-      const down = gestureState.dy >= 0
-      const viewportWidth = Dimensions.get('window').width
-      const viewportHeight = Dimensions.get('window').height
-      const xDist = (gestureState.dx / viewportWidth) * 4000
-      const yDist = (gestureState.dy / viewportHeight) * 2000
-      const xVel = Math.abs(xDist / 10)
-      const yVel = Math.abs(yDist / 10)
-      console.log(xDist, xVel, yDist, yVel)
-
-      if (xVel > 10) {
-        Animated.spring(this.state.pos.x, {
-          toValue: this.state.pos.x._value - xDist,
-          stiffness: 10,
-          damping: 10,
-          mass: 1,
-          overshootClamping: true,
-        }).start()
-      } else {
-        this.state.pos.x.stopAnimation()
+    onPanResponderMove: e => {
+      const posPercent = {
+        x: (e.nativeEvent.pageX / Dimensions.get('window').width) * 100,
+        y: (e.nativeEvent.pageY / Dimensions.get('window').height) * 100,
       }
-
-      if (yVel > 10) {
-        Animated.spring(this.state.pos.y, {
-          toValue: this.state.pos.y._value - yDist,
-          stiffness: 10,
-          damping: 10,
-          mass: 1,
-          overshootClamping: true,
-        }).start()
+      const modPosPercentX = posPercent.x * 2
+      if (modPosPercentX <= 100) {
+        this.setState({
+          joystickPos: {
+            x: modPosPercentX - 50,
+            y: posPercent.y - 50,
+          },
+        })
       } else {
-        this.state.pos.y.stopAnimation()
+        this.animateStop()
       }
     },
-    onPanResponderTerminationRequest: (evt, gestureState) => true,
-    onPanResponderRelease: (evt, gestureState) => {
-      // The user has released all touches while this view is the
-      // responder. This typically means a gesture has succeeded
+    onPanResponderTerminationRequest: () => true,
+    onPanResponderRelease: () => {
       console.log('release')
-
-      this.state.pos.x.stopAnimation()
-      this.state.pos.y.stopAnimation()
+      this.animateStop()
+      this.setState({
+        joystickPos: {
+          x: 0,
+          y: 0,
+        },
+      })
     },
-    onPanResponderTerminate: (evt, gestureState) => {
-      // Another component has become the responder, so this gesture
-      // should be cancelled
+    onPanResponderTerminate: () => {
       console.log('terminate')
-
-      this.state.pos.x.stopAnimation()
-      this.state.pos.y.stopAnimation()
+      this.animateStop()
+      this.setState({
+        joystickPos: {
+          x: 0,
+          y: 0,
+        },
+      })
     },
-    onShouldBlockNativeResponder: (evt, gestureState) => {
-      // Returns whether this component should block native components from becoming the JS
-      // responder. Returns true by default. Is currently only supported on android.
-      return true;
-    },
+    onShouldBlockNativeResponder: () => true,
   });
+
+  animate = () => {
+    const sensitivityThresh = 1
+    const xSign = Math.sign(this.state.joystickPos.x)
+    const ySign = Math.sign(this.state.joystickPos.y)
+    const xAbs = Math.abs(this.state.joystickPos.x)
+    const yAbs = Math.abs(this.state.joystickPos.y)
+    let modX = Math.min(xAbs, 25) / 10 * xSign
+    let modY = Math.min(yAbs, 25) / 10 * ySign
+
+    if (Math.abs(modX) < sensitivityThresh) {
+      modX = 0
+    }
+    if (Math.abs(modY) < sensitivityThresh) {
+      modY = 0
+    }
+
+    Animated.timing(this.state.charPos, {
+      toValue: {
+        x: this.state.charPos.x._value - modX,
+        y: this.state.charPos.y._value - modY,
+      },
+      duration: 0,
+      easing: Easing.inOut(Easing.linear),
+    }).start()
+  }
+
+  animateStart = () => {
+    this.animate()
+    this.animateInterval = window.setInterval(this.animate, 1)
+  }
+
+  animateStop = () => {
+    if (this.animateInterval) {
+      window.clearInterval(this.animateInterval)
+    }
+    this.state.charPos.stopAnimation()
+  }
 
   componentWillMount () {
     Expo.ScreenOrientation.allow(Expo.ScreenOrientation.Orientation.LANDSCAPE)
-  }
-
-  componentDidMount () {
-    console.log(this.state)
-  }
-
-  componentDidUpdate () {
-    console.log(this.state)
   }
 
   render() {
@@ -114,8 +119,8 @@ export default class App extends React.Component {
           style={{
             width: 8000,
             height: 8000,
-            left: this.state.pos.x,
-            top: this.state.pos.y,
+            left: this.state.charPos.x,
+            top: this.state.charPos.y,
           }}
           source={map}
           {...this.panResponder.panHandlers}
